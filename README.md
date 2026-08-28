@@ -20,7 +20,7 @@ Soportia está diseñada para gestionar el flujo de un ticket de soporte técnic
 
 El proyecto busca demostrar reglas de negocio reales en un solo sistema: prioridad, transiciones de estado, comentarios, adjuntos, notificaciones, presencia, llamadas y auditoría. Los empleados crean tickets por categoría, impacto y urgencia. Los agentes atienden solo la cola de su equipo, responden, dejan notas internas y pueden llamar al solicitante si está en línea. Los administradores consultan el panel operativo, las personas, el Centro de automatización, los mensajes internos y el registro de auditoría.
 
-La aplicación se desarrolló como proyecto de portafolio con un backend en Spring Boot, PostgreSQL, un frontend en Angular y n8n como orquestador externo. Spring permanece como fuente de verdad: n8n no escribe en las tablas de la aplicación. Si n8n está apagado, crear y gestionar tickets sigue funcionando; los eventos pendientes se reintentan al volver.
+Backend en Spring Boot, PostgreSQL, frontend en Angular y n8n como orquestador externo. Spring es la fuente de verdad: publica eventos firmados (HMAC) y aplica callbacks idempotentes; n8n no escribe en las tablas de la aplicación. Si n8n está apagado, la mesa sigue operando. Las llamadas van por WebRTC entre navegadores; el servidor solo señaliza por WebSocket.
 
 ## Características
 
@@ -122,8 +122,6 @@ Capturas de las pantallas principales. Las imágenes están en [`assets/`](asset
 
 ## Requisitos e instalación
 
-## Requisitos
-
 * Docker Desktop
 * Java 21, Node.js 22 y npm (solo si se ejecuta fuera de Docker)
 
@@ -201,81 +199,12 @@ sistema_tickets/
 ├── assets/                    # gif de demo y capturas para el README
 ├── automation/                # flujos n8n y contrato de automatización
 ├── backend/                   # API y lógica del backend con Spring Boot
-├── docs/                      # arquitectura, ADR y checklist de demo
 ├── frontend/                  # aplicación web desarrollada con Angular
 ├── infra/                     # inicialización adicional de PostgreSQL
 ├── compose.yaml               # PostgreSQL, backend, frontend y n8n
 ├── .env.example               # ejemplo de variables de entorno
 └── README.md
 ```
-
-### Carpetas importantes
-
-- `backend/.../auth`: Contiene la lógica de autenticación, JWT e inicio de sesión.
-- `backend/.../ticket`: Gestiona el ciclo de vida de los tickets, comentarios, adjuntos, prioridad y SLA.
-- `backend/.../sla`: Detecta tickets en riesgo o con plazo incumplido.
-- `backend/.../outbox`: Publica eventos firmados hacia n8n y recibe callbacks idempotentes.
-- `backend/.../realtime`: Contiene presencia en línea y señalización de llamadas.
-- `backend/.../automation`: Expone reglas y ejecuciones del Centro de automatización.
-- `backend/.../support`: Gestiona el chat interno entre agentes y administración.
-- `frontend/src/app/features`: Contiene las pantallas de tickets, dashboard, soporte y administración.
-- `frontend/src/app/core/call`: Incluye el cliente WebRTC, el overlay de llamada y los controles de micrófono, cámara y pantalla.
-- `automation/workflows`: Contiene los JSON que se importan en n8n.
-- `infra`: Crea la base de datos de n8n en el primer arranque de PostgreSQL.
-- `assets`: Incluye el gif de demostración y las capturas del README.
-
-### Módulos principales de la API REST
-
-- **Autenticación:** Gestiona el inicio de sesión, la renovación de token y el cierre de sesión.
-- **Tickets:** Administra la creación, el listado, la asignación, las transiciones, los comentarios y los adjuntos.
-- **Catálogo:** Proporciona categorías y políticas de SLA para el alta de tickets.
-- **Notificaciones:** Permite consultar los avisos del usuario autenticado.
-- **Dashboard:** Expone conteos operativos, volumen, SLA y carga de agentes según el rol.
-- **Administración:** Incluye usuarios, auditoría y Centro de automatización.
-- **Mensajes internos:** Gestiona la bandeja interna del personal y sus adjuntos.
-- **Integración n8n:** Recibe consultas firmadas (ticket, agentes del equipo, cola en espera) y callbacks; no está pensada para el navegador.
-
-### Automatización con n8n
-
-n8n no es la base de datos de Soportia. El patrón es outbox más callback:
-
-1. Un cambio de negocio (por ejemplo, `ticket.created` o un SLA en riesgo) se confirma en PostgreSQL junto con un evento outbox.
-2. Un publicador envía el evento a n8n con HMAC (`X-Soportia-Timestamp` y `X-Soportia-Signature`).
-3. n8n orquesta esperas, condiciones y lecturas. Cuando debe mutar un ticket, llama a Spring con una clave de idempotencia.
-4. Spring valida la firma, aplica el comando una sola vez y deja historial y notificaciones.
-
-Los cuatro flujos versionados en `automation/workflows` son:
-
-- **Auto route:** Enruta el ticket al equipo de la categoría y lo asigna al agente con menos carga.
-- **Keyword guided reply:** Publica una respuesta guiada si el texto habla de contraseña o VPN, sin sacarlo de la cola.
-- **SLA alert:** Espera, vuelve a consultar el ticket y, si sigue abierto, sube la prioridad o lo reasigna. Avisa al agente o al equipo, no al administrador.
-- **Waiting reminder:** Recorre tickets en espera del solicitante y le envía un recordatorio.
-
-Repetir un callback no duplica asignaciones ni comentarios. Apagar n8n no impide usar la mesa; al encenderlo, los eventos pendientes se reintentan.
-
-### Comunicación en tiempo real y llamadas
-
-El backend utiliza WebSockets para presencia y señalización. El medio de la llamada no pasa por el servidor.
-
-- **Presencia:** El cliente anuncia que el usuario está en línea. En el detalle del ticket aparece si la otra persona está conectada.
-- **Señalización:** Invite, aceptación, rechazo, colgar y candidatos ICE viajan por el WebSocket autenticado con JWT.
-- **WebRTC:** El audio, el video y la pantalla se negocian entre navegadores con un servidor STUN público.
-- **Controles:** Micrófono, cámara, compartir pantalla, minimizar y colgar, en un overlay que no saca al usuario del ticket.
-- **Origen de la llamada:** Desde el detalle del ticket (empleado ↔ agente asignado) o desde Mensajes (agente ↔ administración).
-
-La llamada solo se ofrece si el destinatario está en línea y no hay otra sesión activa. Si está ocupado o desconectado, el origen recibe el estado correspondiente.
-
-## Contribuciones
-
-Las contribuciones, mejoras y sugerencias son bienvenidas.
-
-Flujo de trabajo sugerido:
-
-1. Haz un fork del repositorio.
-2. Crea una rama para tu nueva funcionalidad o corrección.
-3. Realiza los cambios necesarios en el proyecto.
-4. Ejecuta las verificaciones del backend y del frontend.
-5. Abre un pull request con una descripción clara de los cambios realizados.
 
 ## Autor
 

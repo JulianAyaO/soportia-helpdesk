@@ -1,0 +1,2 @@
+# Keep GitHub language stats on the app (TypeScript/Java), not the n8n generator.
+automation/generate-workflows.py linguist-generated=true

@@ -1,0 +1,341 @@
+{
+  "name": "Soportia - SLA Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "soportia-sla-alerts",
+        "responseMode": "onReceived",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "5645e14a-5cff-47ee-ab07-78c993a29001",
+      "name": "SLA event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        0
+      ],
+      "webhookId": "soportia-sla-alerts"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nfunction hv(h, n) {\n  const key = Object.keys(h || {}).find((k) => String(k).toLowerCase() === n);\n  if (!key) return '';\n  const value = h[key];\n  return String(Array.isArray(value) ? value[0] : value ?? '');\n}\nfunction decodeBinary(binary) {\n  if (!binary) return '';\n  const part = binary.data || binary.rawBody;\n  if (!part) return '';\n  if (Buffer.isBuffer(part)) return part.toString('utf8');\n  if (typeof part === 'string') return part;\n  if (part.data) return Buffer.from(part.data, part.encoding || 'base64').toString('utf8');\n  return '';\n}\nfunction sign(secret, timestamp, payload) {\n  return 'sha256=' + crypto.createHmac('sha256', secret).update(String(timestamp) + '.' + payload, 'utf8').digest('hex');\n}\nfunction signedCallback(secret, body, key) {\n  const rawBody = JSON.stringify(body);\n  const timestamp = Math.floor(Date.now() / 1000).toString();\n  return { rawBody, timestamp, signature: sign(secret, timestamp, rawBody), idempotencyKey: key };\n}\nfunction readWebhook() {\n  const item = (typeof $input !== 'undefined' && $input.first) ? $input.first() : { json: $json, binary: typeof $binary !== 'undefined' ? $binary : {} };\n  const json = item.json || {};\n  const headers = json.headers || {};\n  const incomingTimestamp = hv(headers, 'x-soportia-timestamp');\n  const incomingSignature = hv(headers, 'x-soportia-signature');\n  const secret = $env.SOPORTIA_HMAC_SECRET;\n  let requestBody = typeof json.rawBody === 'string' ? json.rawBody : '';\n  if (!requestBody) requestBody = decodeBinary(item.binary);\n  if (!requestBody) throw new Error('Missing raw webhook body for signature verification. Enable Raw Body on the webhook node.');\n  const expected = sign(secret, incomingTimestamp, requestBody);\n  if (!incomingTimestamp || !incomingSignature || expected.length !== incomingSignature.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(incomingSignature))) {\n    throw new Error('Invalid Soportia signature');\n  }\n  const event = (json.body && typeof json.body === 'object') ? json.body : JSON.parse(requestBody);\n  return { secret, event };\n}\nconst { secret, event } = readWebhook();\nif (!String(event.eventType).startsWith('ticket.sla.')) throw new Error('Unsupported SLA event: ' + event.eventType);\nconst ticketId = event.payload.ticketId;\nconst path = '/api/v1/integrations/n8n/tickets/' + ticketId;\nconst getTimestamp = Math.floor(Date.now() / 1000).toString();\nreturn [{ json: {\n  eventId: event.eventId,\n  eventType: event.eventType,\n  ticketId,\n  atRisk: event.eventType === 'ticket.sla.at_risk',\n  getPath: '/integrations/n8n/tickets/' + ticketId,\n  getTimestamp,\n  getSignature: sign(secret, getTimestamp, 'GET ' + path)\n}}];\n"
+      },
+      "id": "50c79a0b-b9a0-4cfa-9b5c-931e6b0d1002",
+      "name": "Validate and prepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.atRisk ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b22ce000-0000-0000-0000-000000000001",
+      "name": "At risk?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        40,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": "={{ Number($env.SOPORTIA_SLA_WAIT_SECONDS || 15) }}",
+        "unit": "seconds"
+      },
+      "id": "b22ce000-0000-0000-0000-000000000002",
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        280,
+        -120
+      ],
+      "webhookId": "soportia-sla-wait"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nfunction hv(h, n) {\n  const key = Object.keys(h || {}).find((k) => String(k).toLowerCase() === n);\n  if (!key) return '';\n  const value = h[key];\n  return String(Array.isArray(value) ? value[0] : value ?? '');\n}\nfunction decodeBinary(binary) {\n  if (!binary) return '';\n  const part = binary.data || binary.rawBody;\n  if (!part) return '';\n  if (Buffer.isBuffer(part)) return part.toString('utf8');\n  if (typeof part === 'string') return part;\n  if (part.data) return Buffer.from(part.data, part.encoding || 'base64').toString('utf8');\n  return '';\n}\nfunction sign(secret, timestamp, payload) {\n  return 'sha256=' + crypto.createHmac('sha256', secret).update(String(timestamp) + '.' + payload, 'utf8').digest('hex');\n}\nfunction signedCallback(secret, body, key) {\n  const rawBody = JSON.stringify(body);\n  const timestamp = Math.floor(Date.now() / 1000).toString();\n  return { rawBody, timestamp, signature: sign(secret, timestamp, rawBody), idempotencyKey: key };\n}\nfunction readWebhook() {\n  const item = (typeof $input !== 'undefined' && $input.first) ? $input.first() : { json: $json, binary: typeof $binary !== 'undefined' ? $binary : {} };\n  const json = item.json || {};\n  const headers = json.headers || {};\n  const incomingTimestamp = hv(headers, 'x-soportia-timestamp');\n  const incomingSignature = hv(headers, 'x-soportia-signature');\n  const secret = $env.SOPORTIA_HMAC_SECRET;\n  let requestBody = typeof json.rawBody === 'string' ? json.rawBody : '';\n  if (!requestBody) requestBody = decodeBinary(item.binary);\n  if (!requestBody) throw new Error('Missing raw webhook body for signature verification. Enable Raw Body on the webhook node.');\n  const expected = sign(secret, incomingTimestamp, requestBody);\n  if (!incomingTimestamp || !incomingSignature || expected.length !== incomingSignature.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(incomingSignature))) {\n    throw new Error('Invalid Soportia signature');\n  }\n  const event = (json.body && typeof json.body === 'object') ? json.body : JSON.parse(requestBody);\n  return { secret, event };\n}\nconst secret = $env.SOPORTIA_HMAC_SECRET;\nconst ticketId = $json.ticketId;\nconst path = '/api/v1/integrations/n8n/tickets/' + ticketId;\nconst getTimestamp = Math.floor(Date.now() / 1000).toString();\nreturn [{ json: {\n  ...$json,\n  getPath: '/integrations/n8n/tickets/' + ticketId,\n  getTimestamp,\n  getSignature: sign(secret, getTimestamp, 'GET ' + path)\n}}];\n"
+      },
+      "id": "b22ce000-0000-0000-0000-000000000007",
+      "name": "Refresh signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SOPORTIA_API_URL + $json.getPath }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Soportia-Timestamp",
+              "value": "={{ $json.getTimestamp }}"
+            },
+            {
+              "name": "X-Soportia-Signature",
+              "value": "={{ $json.getSignature }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "b22ce000-0000-0000-0000-000000000003",
+      "name": "Load ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nfunction hv(h, n) {\n  const key = Object.keys(h || {}).find((k) => String(k).toLowerCase() === n);\n  if (!key) return '';\n  const value = h[key];\n  return String(Array.isArray(value) ? value[0] : value ?? '');\n}\nfunction decodeBinary(binary) {\n  if (!binary) return '';\n  const part = binary.data || binary.rawBody;\n  if (!part) return '';\n  if (Buffer.isBuffer(part)) return part.toString('utf8');\n  if (typeof part === 'string') return part;\n  if (part.data) return Buffer.from(part.data, part.encoding || 'base64').toString('utf8');\n  return '';\n}\nfunction sign(secret, timestamp, payload) {\n  return 'sha256=' + crypto.createHmac('sha256', secret).update(String(timestamp) + '.' + payload, 'utf8').digest('hex');\n}\nfunction signedCallback(secret, body, key) {\n  const rawBody = JSON.stringify(body);\n  const timestamp = Math.floor(Date.now() / 1000).toString();\n  return { rawBody, timestamp, signature: sign(secret, timestamp, rawBody), idempotencyKey: key };\n}\nfunction readWebhook() {\n  const item = (typeof $input !== 'undefined' && $input.first) ? $input.first() : { json: $json, binary: typeof $binary !== 'undefined' ? $binary : {} };\n  const json = item.json || {};\n  const headers = json.headers || {};\n  const incomingTimestamp = hv(headers, 'x-soportia-timestamp');\n  const incomingSignature = hv(headers, 'x-soportia-signature');\n  const secret = $env.SOPORTIA_HMAC_SECRET;\n  let requestBody = typeof json.rawBody === 'string' ? json.rawBody : '';\n  if (!requestBody) requestBody = decodeBinary(item.binary);\n  if (!requestBody) throw new Error('Missing raw webhook body for signature verification. Enable Raw Body on the webhook node.');\n  const expected = sign(secret, incomingTimestamp, requestBody);\n  if (!incomingTimestamp || !incomingSignature || expected.length !== incomingSignature.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(incomingSignature))) {\n    throw new Error('Invalid Soportia signature');\n  }\n  const event = (json.body && typeof json.body === 'object') ? json.body : JSON.parse(requestBody);\n  return { secret, event };\n}\nconst secret = $env.SOPORTIA_HMAC_SECRET;\nconst prev = $('Validate and prepare').first().json;\nif ($json.status !== 'OPEN') return [];\nconst teamId = $json.teamId;\nconst agentsPath = '/api/v1/integrations/n8n/teams/' + teamId + '/agents';\nconst getTimestamp = Math.floor(Date.now() / 1000).toString();\nreturn [{ json: {\n  ...prev,\n  currentAssignee: $json.assigneeId || null,\n  teamId,\n  agentsPath: '/integrations/n8n/teams/' + teamId + '/agents',\n  getTimestamp,\n  getSignature: sign(secret, getTimestamp, 'GET ' + agentsPath)\n}}];\n"
+      },
+      "id": "b22ce000-0000-0000-0000-000000000004",
+      "name": "Still open?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SOPORTIA_API_URL + $json.agentsPath }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Soportia-Timestamp",
+              "value": "={{ $json.getTimestamp }}"
+            },
+            {
+              "name": "X-Soportia-Signature",
+              "value": "={{ $json.getSignature }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "b22ce000-0000-0000-0000-000000000005",
+      "name": "Load agents",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nfunction hv(h, n) {\n  const key = Object.keys(h || {}).find((k) => String(k).toLowerCase() === n);\n  if (!key) return '';\n  const value = h[key];\n  return String(Array.isArray(value) ? value[0] : value ?? '');\n}\nfunction decodeBinary(binary) {\n  if (!binary) return '';\n  const part = binary.data || binary.rawBody;\n  if (!part) return '';\n  if (Buffer.isBuffer(part)) return part.toString('utf8');\n  if (typeof part === 'string') return part;\n  if (part.data) return Buffer.from(part.data, part.encoding || 'base64').toString('utf8');\n  return '';\n}\nfunction sign(secret, timestamp, payload) {\n  return 'sha256=' + crypto.createHmac('sha256', secret).update(String(timestamp) + '.' + payload, 'utf8').digest('hex');\n}\nfunction signedCallback(secret, body, key) {\n  const rawBody = JSON.stringify(body);\n  const timestamp = Math.floor(Date.now() / 1000).toString();\n  return { rawBody, timestamp, signature: sign(secret, timestamp, rawBody), idempotencyKey: key };\n}\nfunction readWebhook() {\n  const item = (typeof $input !== 'undefined' && $input.first) ? $input.first() : { json: $json, binary: typeof $binary !== 'undefined' ? $binary : {} };\n  const json = item.json || {};\n  const headers = json.headers || {};\n  const incomingTimestamp = hv(headers, 'x-soportia-timestamp');\n  const incomingSignature = hv(headers, 'x-soportia-signature');\n  const secret = $env.SOPORTIA_HMAC_SECRET;\n  let requestBody = typeof json.rawBody === 'string' ? json.rawBody : '';\n  if (!requestBody) requestBody = decodeBinary(item.binary);\n  if (!requestBody) throw new Error('Missing raw webhook body for signature verification. Enable Raw Body on the webhook node.');\n  const expected = sign(secret, incomingTimestamp, requestBody);\n  if (!incomingTimestamp || !incomingSignature || expected.length !== incomingSignature.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(incomingSignature))) {\n    throw new Error('Invalid Soportia signature');\n  }\n  const event = (json.body && typeof json.body === 'object') ? json.body : JSON.parse(requestBody);\n  return { secret, event };\n}\nconst secret = $env.SOPORTIA_HMAC_SECRET;\nconst prev = $('Still open?').first().json;\nconst agents = Array.isArray($json.agents) ? $json.agents.filter((a) => a.id !== prev.currentAssignee) : [];\nconst pick = agents[0];\nconst body = {\n  automationId: '60000000-0000-0000-0000-000000000002',\n  eventId: prev.eventId,\n  status: 'SUCCESS',\n  result: 'Escalated open ticket after SLA wait',\n  ticketId: prev.ticketId,\n  bumpPriority: true,\n  notifyAdmin: true,\n  forceAssign: true\n};\nif (pick && pick.id) body.assigneeId = pick.id;\nreturn [{ json: signedCallback(secret, body, prev.eventId + ':sla-escalate') }];\n"
+      },
+      "id": "b22ce000-0000-0000-0000-000000000006",
+      "name": "Build escalation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SOPORTIA_API_URL + '/integrations/n8n/callback' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Soportia-Timestamp",
+              "value": "={{ $json.timestamp }}"
+            },
+            {
+              "name": "X-Soportia-Signature",
+              "value": "={{ $json.signature }}"
+            },
+            {
+              "name": "X-Idempotency-Key",
+              "value": "={{ $json.idempotencyKey }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.rawBody }}",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "8597102e-104f-4c3e-9834-5ffb11251003",
+      "name": "Record escalation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1480,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "SLA event": {
+      "main": [
+        [
+          {
+            "node": "Validate and prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and prepare": {
+      "main": [
+        [
+          {
+            "node": "At risk?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "At risk?": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Refresh signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Refresh signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load ticket": {
+      "main": [
+        [
+          {
+            "node": "Still open?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still open?": {
+      "main": [
+        [
+          {
+            "node": "Load agents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load agents": {
+      "main": [
+        [
+          {
+            "node": "Build escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build escalation": {
+      "main": [
+        [
+          {
+            "node": "Record escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh signature": {
+      "main": [
+        [
+          {
+            "node": "Load ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1e9c7633-e32c-445c-a7f2-d7e25e898002",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

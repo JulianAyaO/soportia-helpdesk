@@ -1,0 +1,54 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Internal notes (not for GitHub)
+docs/
+READMEexample.md
+
+# Java / Spring
+backend/target/
+backend/data/
+*.class
+*.jar
+!backend/.mvn/wrapper/maven-wrapper.jar
+hs_err_pid*
+replay_pid*
+
+# Node / Angular
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/coverage/
+frontend/out-tsc/
+npm-debug.log
+yarn-error.log
+
+# Playwright
+playwright-report/
+test-results/
+frontend/playwright-report/
+frontend/test-results/
+frontend/blob-report/
+frontend/__screenshots__/
+
+# Local uploads and dumps
+.data/
+data/
+*.orig
+*.tmp
+*.bak
+*.swp
+*.log
+
+# IDE and OS
+.idea/
+.vscode/
+.cursor/
+*.iml
+*.iws
+*.ipr
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,79 @@
+CREATE TABLE users (
+  id UUID PRIMARY KEY, email VARCHAR(255) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL,
+  display_name VARCHAR(120) NOT NULL, role VARCHAR(32) NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE teams (
+  id UUID PRIMARY KEY, name VARCHAR(120) NOT NULL UNIQUE, description VARCHAR(500),
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE team_members (
+  team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY(team_id,user_id)
+);
+CREATE TABLE categories (
+  id UUID PRIMARY KEY, name VARCHAR(120) NOT NULL UNIQUE, description VARCHAR(500),
+  default_team_id UUID REFERENCES teams(id), active BOOLEAN NOT NULL DEFAULT TRUE
+);
+CREATE TABLE sla_policies (
+  id UUID PRIMARY KEY, name VARCHAR(120) NOT NULL, priority VARCHAR(20) NOT NULL,
+  response_minutes INTEGER NOT NULL, resolution_minutes INTEGER NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE
+);
+CREATE TABLE tickets (
+  id UUID PRIMARY KEY, number VARCHAR(30) NOT NULL UNIQUE, title VARCHAR(200) NOT NULL,
+  description TEXT NOT NULL, status VARCHAR(40) NOT NULL, impact SMALLINT NOT NULL,
+  urgency SMALLINT NOT NULL, priority VARCHAR(20) NOT NULL, requester_id UUID NOT NULL REFERENCES users(id),
+  assignee_id UUID REFERENCES users(id), team_id UUID REFERENCES teams(id), category_id UUID REFERENCES categories(id),
+  sla_policy_id UUID REFERENCES sla_policies(id), response_due_at TIMESTAMP WITH TIME ZONE,
+  resolution_due_at TIMESTAMP WITH TIME ZONE, first_response_at TIMESTAMP WITH TIME ZONE,
+  resolved_at TIMESTAMP WITH TIME ZONE, created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE comments (
+  id UUID PRIMARY KEY, ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  author_id UUID NOT NULL REFERENCES users(id), body TEXT NOT NULL, visibility VARCHAR(20) NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE ticket_history (
+  id UUID PRIMARY KEY, ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  actor_id UUID REFERENCES users(id), event_type VARCHAR(50) NOT NULL, old_value TEXT, new_value TEXT,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE sla_events (
+  id UUID PRIMARY KEY, ticket_id UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  event_type VARCHAR(50) NOT NULL, due_at TIMESTAMP WITH TIME ZONE, occurred_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE outbox_events (
+  id UUID PRIMARY KEY, aggregate_type VARCHAR(50) NOT NULL, aggregate_id UUID NOT NULL,
+  event_type VARCHAR(80) NOT NULL, payload TEXT NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+  attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP, published_at TIMESTAMP WITH TIME ZONE
+);
+CREATE TABLE automations (
+  id UUID PRIMARY KEY, name VARCHAR(150) NOT NULL, event_type VARCHAR(80) NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE, conditions_json TEXT NOT NULL, actions_json TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE automation_executions (
+  id UUID PRIMARY KEY, automation_id UUID REFERENCES automations(id), event_id UUID REFERENCES outbox_events(id),
+  status VARCHAR(20) NOT NULL, idempotency_key VARCHAR(150) NOT NULL UNIQUE, result TEXT,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP, completed_at TIMESTAMP WITH TIME ZONE
+);
+CREATE TABLE audit_logs (
+  id UUID PRIMARY KEY, actor_id UUID REFERENCES users(id), action VARCHAR(100) NOT NULL,
+  resource_type VARCHAR(60) NOT NULL, resource_id VARCHAR(100), details TEXT,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE refresh_tokens (
+  id UUID PRIMARY KEY, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash VARCHAR(64) NOT NULL UNIQUE, expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  revoked_at TIMESTAMP WITH TIME ZONE, created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE app_sequences (name VARCHAR(30) PRIMARY KEY, seq_value BIGINT NOT NULL);
+INSERT INTO app_sequences(name,seq_value) VALUES ('ticket',1000);
+CREATE INDEX idx_ticket_requester ON tickets(requester_id);
+CREATE INDEX idx_ticket_assignee ON tickets(assignee_id);
+CREATE INDEX idx_ticket_status ON tickets(status);
+CREATE INDEX idx_outbox_pending ON outbox_events(status,next_attempt_at);
+CREATE INDEX idx_refresh_user ON refresh_tokens(user_id);

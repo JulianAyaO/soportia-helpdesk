@@ -1,0 +1,118 @@
+# Local Soportia stack: PostgreSQL, Spring Boot API, Angular (nginx), n8n.
+# Copy .env.example to .env before `docker compose up --build`.
+name: soportia
+
+services:
+  # Application database (tickets, users, outbox) plus n8n metadata DB from infra/db-init.
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-soportia}
+      POSTGRES_USER: ${POSTGRES_USER:-soportia}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-soportia_local}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-soportia} -d ${POSTGRES_DB:-soportia}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [soportia]
+
+  # Spring Boot API — source of truth for tickets, SLA, auth, and n8n callbacks.
+  backend:
+    build:
+      context: ./backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-soportia}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-soportia}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-soportia_local}
+      JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-me-at-least-32-characters}
+      TZ: America/Bogota
+      N8N_ROUTING_WEBHOOK_URL: ${N8N_ROUTING_WEBHOOK_URL:-http://n8n:5678/webhook/soportia-ticket-routing}
+      N8N_SLA_WEBHOOK_URL: ${N8N_SLA_WEBHOOK_URL:-http://n8n:5678/webhook/soportia-sla-alerts}
+      N8N_HMAC_SECRET: ${N8N_HMAC_SECRET:-local-automation-hmac-secret-change-me}
+      ATTACHMENTS_DIR: /app/data/attachments
+    ports:
+      - "8080:8080"
+    volumes:
+      - attachments_data:/app/data/attachments
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+    networks: [soportia]
+
+  # Angular production build served by nginx (HTTP 4200, HTTPS 4243).
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "4200:80"
+      - "4243:443"
+    environment:
+      TLS_IP: ${TLS_IP:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [soportia]
+
+  # External orchestrator. Workflow JSON is mounted from automation/workflows (read-only).
+  n8n:
+    image: n8nio/n8n:2.35.6
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${N8N_DB:-n8n}
+      DB_POSTGRESDB_USER: ${N8N_DB_USER:-n8n}
+      DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD:-n8n_local}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:-local-n8n-encryption-key-change-me}
+      N8N_SECURE_COOKIE: "false"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      GENERIC_TIMEZONE: America/Bogota
+      SOPORTIA_API_URL: http://backend:8080/api/v1
+      SOPORTIA_HMAC_SECRET: ${N8N_HMAC_SECRET:-local-automation-hmac-secret-change-me}
+      SOPORTIA_SLA_WAIT_SECONDS: ${SOPORTIA_SLA_WAIT_SECONDS:-15}
+      SOPORTIA_WAITING_HOURS: ${SOPORTIA_WAITING_HOURS:-2}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "${N8N_BLOCK_ENV_ACCESS_IN_NODE:-false}"
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./automation/workflows:/workflows:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5678/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+    networks: [soportia]
+
+volumes:
+  postgres_data:
+  n8n_data:
+  attachments_data:
+
+networks:
+  soportia:
+    driver: bridge

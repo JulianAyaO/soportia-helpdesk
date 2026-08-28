@@ -71,14 +71,14 @@ import { AuthService } from '../../core/auth/auth.service';
             <div class="divider"><span>CUENTAS DE DEMOSTRACIÓN</span></div>
             <div class="demos">
               @for (demo of demos; track demo.email) {
-                <button type="button" class="demo" [attr.data-tone]="demo.tone" (click)="quickLogin(demo.email)">
-                  <span class="demo-icon"><mat-icon>{{demo.icon}}</mat-icon></span>
+                <button type="button" class="demo" [attr.data-tone]="demo.tone" [attr.aria-label]="'Entrar como ' + demo.label" (click)="quickLogin(demo.email)">
+                  <span class="demo-icon" aria-hidden="true"><mat-icon>{{demo.icon}}</mat-icon></span>
                   <span class="demo-copy">
                     <strong>{{demo.label}}</strong>
                     <small>{{demo.hint}}</small>
                   </span>
                   <span class="demo-email">{{demo.email}}</span>
-                  <mat-icon class="demo-go">chevron_right</mat-icon>
+                  <mat-icon class="demo-go" aria-hidden="true">chevron_right</mat-icon>
                 </button>
               }
             </div>

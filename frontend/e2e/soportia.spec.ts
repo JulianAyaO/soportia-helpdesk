@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('employee creates a ticket and admin sees automations', async ({ page }) => {
   await page.goto('/login');
-  await page.getByRole('button', { name: /Empleado employee@soportia\.local/i }).click();
+  await page.getByRole('button', { name: 'Entrar como Camila Restrepo' }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole('heading', { name: /Buenos |Buenas /i })).toBeVisible();
 
@@ -18,10 +18,10 @@ test('employee creates a ticket and admin sees automations', async ({ page }) =>
   await page.evaluate(() => localStorage.clear());
   await page.context().clearCookies();
   await page.goto('/login');
-  await page.getByRole('button', { name: /Administrador admin@soportia\.local/i }).click();
+  await page.getByRole('button', { name: 'Entrar como Marta Suárez' }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
   await page.goto('/admin/automations');
   await expect(page.getByRole('heading', { name: 'Centro de automatización' })).toBeVisible();
-  await expect(page.getByText('Auto route ticket')).toBeVisible();
-  await expect(page.getByText('SLA risk alert')).toBeVisible();
+  await expect(page.getByText('Enviar el ticket a la categoría correcta')).toBeVisible();
+  await expect(page.getByText('Avisar cuando un ticket se retrasa')).toBeVisible();
 });

@@ -38,6 +38,10 @@ Spring Boot es la fuente de verdad. n8n orquesta enrutado, escalación y recorda
 | :---: | :---: |
 | <p align="center"><img src="assets/adminCentroAutomatizaciones.png" alt="Centro de automatización" width="420"></p> | <p align="center"><img src="assets/adminMensajes-llamadas.png" alt="Mensajes internos y llamada en curso" width="420"></p> |
 
+<p align="center">
+  <em>Capturas de las pantallas principales. Las imágenes están en <a href="./assets/">assets/</a>.</em>
+</p>
+
 ## Tecnologías utilizadas
 
 - **Frontend:** Angular 22, Angular Material, RxJS, WebSocket, WebRTC, Playwright

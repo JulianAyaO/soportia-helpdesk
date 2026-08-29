@@ -57,8 +57,8 @@ Spring Boot es la fuente de verdad. n8n orquesta enrutado, escalación y recorda
 
 ```powershell
 # 1. Clonar el repositorio
-git clone https://github.com/JulianAyaO/sistema_tickets.git
-cd sistema_tickets
+git clone https://github.com/JulianAyaO/soportia-helpdesk.git
+cd soportia-helpdesk
 
 # 2. Configurar el entorno
 copy .env.example .env
